@@ -29,6 +29,7 @@ import (
 	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/hex"
+	"github.com/minio/minio/cmd/logger"
 	"net/http"
 	"net/url"
 	"sort"
@@ -347,11 +348,24 @@ func doesSignatureMatch(hashedPayload string, r *http.Request, region string, st
 	if errCode != ErrNone {
 		return errCode
 	}
-
+	logger.Info("-------------doesSignatureMatch start---------------------")
+	logger.Info("extractedSignedHeaders %#v", extractedSignedHeaders)
 	cred, _, s3Err := checkKeyValid(signV4Values.Credential.accessKey)
 	if s3Err != ErrNone {
 		return s3Err
 	}
+
+	logger.Info("recv Signature %s", signV4Values.Signature)
+	logger.Info("recv SignedHeaders %s", signV4Values.SignedHeaders)
+	logger.Info("recv Credential accessKey %s", signV4Values.Credential.accessKey)
+	logger.Info("recv Credential scope %d", signV4Values.Credential.scope.date.Unix())
+	logger.Info("recv Credential scope region %s", signV4Values.Credential.scope.region)
+	logger.Info("recv Credential scope service %s", signV4Values.Credential.scope.service)
+	logger.Info("recv Credential scope request %s", signV4Values.Credential.scope.request)
+	logger.Info("recv hashedPayload %s", hashedPayload)
+
+	logger.Info("svc cred.AccessKey %s", cred.AccessKey)
+	logger.Info("svc cred.SecretKey %s", cred.SecretKey)
 
 	// Extract date, if not present throw error.
 	var date string
@@ -383,11 +397,13 @@ func doesSignatureMatch(hashedPayload string, r *http.Request, region string, st
 	// Calculate signature.
 	newSignature := getSignature(signingKey, stringToSign)
 
+	logger.Info("Calculate signature:%s", newSignature)
+	logger.Info("-------------doesSignatureMatch over---------------------")
 	// Verify if signature match.
 	if !compareSignatureV4(newSignature, signV4Values.Signature) {
+		logger.Info("compareSignatureV4 not equal")
 		return ErrSignatureDoesNotMatch
 	}
-
 	// Return error none.
 	return ErrNone
 }
