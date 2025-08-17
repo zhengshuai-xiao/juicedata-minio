@@ -139,7 +139,7 @@ func serverHandleCmdArgs(ctx *cli.Context) {
 	globalMinioAddr = globalCLIContext.Addr
 
 	globalMinioHost, globalMinioPort = mustSplitHostPort(globalMinioAddr)
-	globalEndpoints, setupType, err = createServerEndpoints(globalCLIContext.Addr, "/tmp/fakeEndpoint")
+	globalEndpoints, setupType, err = createServerEndpoints(globalCLIContext.Addr, serverCmdArgs(ctx)...) //"/tmp/fakeEndpoint")
 	logger.FatalIf(err, "Invalid command line arguments")
 
 	globalLocalNodeName = GetLocalPeer(globalEndpoints, globalMinioHost, globalMinioPort)
@@ -527,7 +527,7 @@ func newObjectLayer(ctx context.Context, endpointServerPools EndpointServerPools
 	return newErasureServerPools(ctx, endpointServerPools)
 }
 
-func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
+func ServerMain4S3Store(ctx *cli.Context, jfs ObjectLayer) {
 	globalIsJFSGateway = true
 
 	defer globalDNSCache.Stop()
