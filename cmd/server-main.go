@@ -527,6 +527,114 @@ func newObjectLayer(ctx context.Context, endpointServerPools EndpointServerPools
 	return newErasureServerPools(ctx, endpointServerPools)
 }
 
+func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
+	globalIsJFSGateway = true
+
+	defer globalDNSCache.Stop()
+
+	signal.Notify(globalOSSignalCh, os.Interrupt, syscall.SIGTERM, syscall.SIGQUIT)
+
+	go handleSignals()
+
+	setDefaultProfilerRates()
+
+	// Initialize globalConsoleSys system
+	globalConsoleSys = NewConsoleLogger(GlobalContext)
+	logger.AddTarget(globalConsoleSys)
+
+	// Perform any self-tests
+	bitrotSelfTest()
+	erasureSelfTest()
+	compressSelfTest()
+
+	// Handle all server command args.
+	serverHandleCmdArgs(ctx)
+
+	// Handle all server environment vars.
+	serverHandleEnvVars()
+
+	// Set node name, only set for distributed setup.
+	globalConsoleSys.SetNodeName(globalLocalNodeName)
+
+	// Initialize all help
+	initHelp()
+
+	// Initialize all sub-systems
+	newAllSubsystems()
+
+	globalMinioEndpoint = func() string {
+		host := globalMinioHost
+		if host == "" {
+			host = sortIPs(mustGetLocalIP4().ToSlice())[0]
+		}
+		return fmt.Sprintf("%s://%s", getURLScheme(globalIsTLS), net.JoinHostPort(host, globalMinioPort))
+	}()
+
+	// Set system resources to maximum.
+	setMaxResources()
+
+	// Configure server.
+	handler, err := configureServerHandler(globalEndpoints)
+	if err != nil {
+		logger.Fatal(config.ErrUnexpectedError(err), "Unable to configure one of server's RPC services")
+	}
+
+	var getCert certs.GetCertificateFunc
+	if globalTLSCerts != nil {
+		getCert = globalTLSCerts.GetCertificate
+	}
+
+	httpServer := xhttp.NewServer([]string{globalMinioAddr}, criticalErrorHandler{corsHandler(handler)}, getCert)
+	httpServer.BaseContext = func(listener net.Listener) context.Context {
+		return GlobalContext
+	}
+	go func() {
+		globalHTTPServerErrorCh <- httpServer.Start()
+	}()
+
+	setHTTPServer(httpServer)
+
+	logger.SetDeploymentID(globalDeploymentID)
+
+	//initBackgroundExpiry(GlobalContext, jfs)
+	//initDataScanner(GlobalContext, jfs)
+
+	if err = initServer(GlobalContext, jfs); err != nil {
+		var cerr config.Err
+		// For any config error, we don't need to drop into safe-mode
+		// instead its a user error and should be fixed by user.
+		if errors.As(err, &cerr) {
+			logger.FatalIf(err, "Unable to initialize the server")
+		}
+
+		// If context was canceled
+		if errors.Is(err, context.Canceled) {
+			logger.FatalIf(err, "Server startup canceled upon user request")
+		}
+	}
+
+	if globalCacheConfig.Enabled {
+		// initialize the new disk cache objects.
+		var cacheAPI CacheObjectLayer
+		cacheAPI, err = newServerCacheObjects(GlobalContext, globalCacheConfig)
+		logger.FatalIf(err, "Unable to initialize disk caching")
+
+		setCacheObjectLayer(cacheAPI)
+	}
+
+	// Initialize users credentials and policies in background right after config has initialized.
+	go globalIAMSys.Init(GlobalContext, jfs)
+
+	// Prints the formatted startup message, if err is not nil then it prints additional information as well.
+	printStartupMessage(getAPIEndpoints(), err)
+
+	if globalActiveCred.Equal(auth.DefaultCredentials) {
+		msg := fmt.Sprintf("Detected default credentials '%s', please change the credentials immediately using 'MINIO_ROOT_USER' and 'MINIO_ROOT_PASSWORD'", globalActiveCred)
+		logger.StartupMessage(color.RedBold(msg))
+	}
+
+	<-globalOSSignalCh
+}
 func ServerMain4S3Store(ctx *cli.Context, jfs ObjectLayer) {
 	globalIsJFSGateway = true
 
