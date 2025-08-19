@@ -636,7 +636,9 @@ func ServerMainForJFS(ctx *cli.Context, jfs ObjectLayer) {
 	<-globalOSSignalCh
 }
 func ServerMain4S3Store(ctx *cli.Context, jfs ObjectLayer) {
-	globalIsJFSGateway = true
+	//globalIsJFSGateway = true
+	// Set when gateway is enabled
+	globalIsGateway = true
 
 	defer globalDNSCache.Stop()
 
